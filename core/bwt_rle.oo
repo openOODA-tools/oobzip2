@@ -1,0 +1,131 @@
+// # Run-Length Encoding Engine
+//
+// Logline: Compress and expand repeating byte patterns and zero-symbol runs.
+//
+// Setup: Bound repeat counts to prevent run overflow across block borders.
+//
+// Beats:
+//   1. Encode repeating byte sequences into run-length packets.
+//   2. Decode run-length byte packets into uncompressed stream.
+//   3. Compress zero-symbol runs following Move-To-Front transform.
+//   4. Expand zero-symbol runs back into MTF rank indices.
+
+pub fn rle_encode_bytes(data: String) -> String {
+    let len: Int = chars_len(data);
+    if len <= 0 {
+        return "";
+    }
+    let mut out: List[Int] = bytes_new();
+    let mut i: Int = 0;
+
+    while i < len {
+        let b: Int = byte_at(data, i);
+        let mut run: Int = 1;
+        while (i + run < len) && (byte_at(data, i + run) == b) && (run < 255) {
+            run = run + 1;
+        }
+
+        if run >= 4 {
+            out = bytes_push(out, b);
+            out = bytes_push(out, b);
+            out = bytes_push(out, b);
+            out = bytes_push(out, b);
+            out = bytes_push(out, run - 4);
+            i = i + run;
+        } else {
+            let mut k: Int = 0;
+            while k < run {
+                out = bytes_push(out, b);
+                k = k + 1;
+            }
+            i = i + run;
+        }
+    }
+    return bytes_to_str(out);
+}
+
+pub fn rle_decode_bytes(data: String) -> String {
+    let len: Int = chars_len(data);
+    if len <= 0 {
+        return "";
+    }
+    let mut out: List[Int] = bytes_new();
+    let mut i: Int = 0;
+
+    while i < len {
+        let b: Int = byte_at(data, i);
+        if (i + 3 < len) && (byte_at(data, i + 1) == b) && (byte_at(data, i + 2) == b) && (byte_at(data, i + 3) == b) {
+            let mut k: Int = 0;
+            while k < 4 {
+                out = bytes_push(out, b);
+                k = k + 1;
+            }
+            if i + 4 < len {
+                let extra: Int = byte_at(data, i + 4);
+                let mut e: Int = 0;
+                while e < extra {
+                    out = bytes_push(out, b);
+                    e = e + 1;
+                }
+                i = i + 5;
+            } else {
+                i = i + 4;
+            }
+        } else {
+            out = bytes_push(out, b);
+            i = i + 1;
+        }
+    }
+    return bytes_to_str(out);
+}
+
+pub fn rle_encode_ranks(ranks: List[Int]) -> List[Int] {
+    let len: Int = list_len(ranks);
+    let mut out: List[Int] = list_new();
+    let mut i: Int = 0;
+
+    while i < len {
+        let v: Int = list_get(ranks, i);
+        if v == 0 {
+            let mut run: Int = 1;
+            while (i + run < len) && (list_get(ranks, i + run) == 0) && (run < 255) {
+                run = run + 1;
+            }
+            if run >= 3 {
+                out = list_push(out, 255);
+                out = list_push(out, run);
+                i = i + run;
+            } else {
+                out = list_push(out, 0);
+                i = i + 1;
+            }
+        } else {
+            out = list_push(out, v);
+            i = i + 1;
+        }
+    }
+    return out;
+}
+
+pub fn rle_decode_ranks(ranks: List[Int]) -> List[Int] {
+    let len: Int = list_len(ranks);
+    let mut out: List[Int] = list_new();
+    let mut i: Int = 0;
+
+    while i < len {
+        let v: Int = list_get(ranks, i);
+        if v == 255 && i + 1 < len {
+            let count: Int = list_get(ranks, i + 1);
+            let mut c: Int = 0;
+            while c < count {
+                out = list_push(out, 0);
+                c = c + 1;
+            }
+            i = i + 2;
+        } else {
+            out = list_push(out, v);
+            i = i + 1;
+        }
+    }
+    return out;
+}

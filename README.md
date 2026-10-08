@@ -54,17 +54,22 @@ oobzip2-uninstall
 ## 2. CLI Usage
 
 ```
-usage: oobzip2 [options] [ARGUMENTS]...
+usage: oobzip2 [options] [INPUT]
 
 Burrows-Wheeler block sorting text compression engine with integrity checks.
 
 Options:
+  -c, --compress       compress input text [default]
+  -d, --decompress     decompress bzip2 payload
+  -t, --test           test payload and verify CRC-32 integrity
+  -i, --inspect        inspect container header and block size
+      --bwt            execute raw Burrows-Wheeler Transform
+  -1 .. -9             compression block level (100k to 900k) [default: -9]
+  -s, --string <TEXT>  explicit input text string
+      --json           output formatted as structured JSON
+      --mcp            run as Model Context Protocol stdio server
   -h, --help           display this help and exit
   -v, --version        output version information and exit
-      --json           output formatted as JSON Lines
-      --color <WHEN>   colorize output: auto, always, never [default: auto]
-      --theme <NAME>   override active oote palette
-      --mcp            run as Model Context Protocol stdio server
 ```
 
 ---
@@ -80,6 +85,12 @@ Options:
 ## 4. Model Context Protocol (MCP)
 
 When invoked with `--mcp`, `oobzip2` runs a JSON-RPC 2.0 stdio server providing structured tools for AI coding agents:
+
+* `bzip2_compress`: Compress text using BWT, MTF, RLE, and CRC32.
+* `bzip2_decompress`: Decompress bzip2 payload back to original text with integrity check.
+* `bzip2_inspect`: Inspect container header, block size, and CRC-32 checksum.
+* `bzip2_bwt`: Perform forward or inverse Burrows-Wheeler Transform.
+* `bzip2_stats`: Evaluate compression ratio, size metrics, and CRC checksum.
 
 ```bash
 oobzip2 --mcp

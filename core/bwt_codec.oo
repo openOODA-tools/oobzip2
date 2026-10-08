@@ -1,0 +1,138 @@
+// # BWT and Bzip2 High-Level Codec
+//
+// Logline: Pipeline coordinator for BWT, MTF, RLE, and CRC32 container compression.
+//
+// Setup: Demands all core transformation modules for end-to-end processing.
+//
+// Beats:
+//   1. Compress data through RLE1 -> BWT -> MTF -> RLE2 pipeline.
+//   2. Decompress container payload through inverse transformation pipeline.
+//   3. Validate stream integrity and calculate compression metrics.
+//   4. Inspect container headers and block signatures.
+
+import "core/bwt_types.oo";
+import "core/bwt_crc.oo";
+import "core/bwt_engine.oo";
+import "core/bwt_mtf.oo";
+import "core/bwt_rle.oo";
+
+fn ranks_to_hex(ranks: List[Int]) -> String {
+    let hex: String = "0123456789abcdef";
+    let len: Int = list_len(ranks);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < len {
+        let v: Int = list_get(ranks, i);
+        let hi: Int = (v / 16) & 15;
+        let lo: Int = v & 15;
+        out = out + str_slice(hex, hi, hi + 1) + str_slice(hex, lo, lo + 1);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn hex_to_ranks(hex_str: String) -> List[Int] {
+    let len: Int = chars_len(hex_str);
+    let mut out: List[Int] = list_new();
+    let mut i: Int = 0;
+    while i + 1 < len {
+        let hi_ch: String = str_slice(hex_str, i, i + 1);
+        let lo_ch: String = str_slice(hex_str, i + 1, i + 2);
+        let mut hi: Int = 0;
+        let mut lo: Int = 0;
+        let hex: String = "0123456789abcdef";
+        let mut k: Int = 0;
+        while k < 16 {
+            if str_slice(hex, k, k + 1) == hi_ch { hi = k; }
+            if str_slice(hex, k, k + 1) == lo_ch { lo = k; }
+            k = k + 1;
+        }
+        out = list_push(out, (hi * 16) + lo);
+        i = i + 2;
+    }
+    return out;
+}
+
+pub fn compress_text(text: String, level: Int) -> String {
+    let crc: Int = calc_crc32(text);
+    let r1: String = rle_encode_bytes(text);
+    let blk: BwtBlock = bwt_forward(r1);
+    let mtf: List[Int] = mtf_encode(blk.payload);
+    let r2: List[Int] = rle_encode_ranks(mtf);
+    let hex_payload: String = ranks_to_hex(r2);
+
+    let mut lvl: Int = level;
+    if lvl < 1 || lvl > 9 { lvl = 9; }
+
+    return "BZh" + to_string(lvl) + ":"
+        + to_string(blk.primary_index) + ":"
+        + crc_to_hex(crc) + ":"
+        + hex_payload;
+}
+
+pub fn decompress_payload(payload: String) -> String {
+    let len: Int = chars_len(payload);
+    if len < 5 || !str_starts_with(payload, "BZh") {
+        return "";
+    }
+
+    let mut colons: List[Int] = list_new();
+    let mut i: Int = 0;
+    while i < len {
+        if str_slice(payload, i, i + 1) == ":" {
+            colons = list_push(colons, i);
+        }
+        i = i + 1;
+    }
+
+    if list_len(colons) < 3 {
+        return "";
+    }
+
+    let p0: Int = list_get(colons, 0);
+    let p1: Int = list_get(colons, 1);
+    let p2: Int = list_get(colons, 2);
+
+    let idx_str: String = str_slice(payload, p0 + 1, p1);
+    let hex_data: String = str_slice(payload, p2 + 1, len);
+
+    let mut primary_idx: Int = 0;
+    let idx_len: Int = chars_len(idx_str);
+    let mut d: Int = 0;
+    while d < idx_len {
+        let ch: Int = byte_at(idx_str, d);
+        if ch >= 48 && ch <= 57 {
+            primary_idx = (primary_idx * 10) + (ch - 48);
+        }
+        d = d + 1;
+    }
+
+    let r2_ranks: List[Int] = hex_to_ranks(hex_data);
+    let mtf_ranks: List[Int] = rle_decode_ranks(r2_ranks);
+    let l_str: String = mtf_decode(mtf_ranks);
+    let r1_str: String = bwt_inverse(l_str, primary_idx);
+    let orig: String = rle_decode_bytes(r1_str);
+
+    return orig;
+}
+
+pub fn inspect_container(payload: String) -> BzipHeader {
+    if chars_len(payload) >= 4 && str_starts_with(payload, "BZh") {
+        let lvl_byte: Int = byte_at(payload, 3);
+        let mut lvl: Int = 9;
+        if lvl_byte >= 49 && lvl_byte <= 57 {
+            lvl = lvl_byte - 48;
+        }
+        return make_header(lvl, true);
+    }
+    return make_header(9, false);
+}
+
+pub fn evaluate_stats(orig: String, comp: String) -> CompressionStats {
+    let orig_sz: Int = chars_len(orig);
+    let comp_sz: Int = chars_len(comp);
+    let crc: Int = calc_crc32(orig);
+    let restored: String = decompress_payload(comp);
+    let ok: Bool = (restored == orig);
+    return make_stats(orig_sz, comp_sz, crc, 1, ok);
+}

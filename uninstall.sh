@@ -4,7 +4,7 @@
 # "Removes oobzip2 binary, package installations, and cache."
 #
 # Usage:
-#   curl -fsSL https://openooda-toobzip2.github.io/oobzip2/uninstall.sh | bash
+#   curl -fsSL https://openooda-tools.github.io/oobzip2/uninstall.sh | bash
 #   or: ./uninstall.sh [options]
 #
 # Options:

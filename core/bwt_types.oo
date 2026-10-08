@@ -1,0 +1,69 @@
+// # BWT Data Types and Structures
+//
+// Logline: Data models for Burrows-Wheeler transform blocks, compression metadata, and headers.
+//
+// Setup: Demands pure openOODA scalar types with zero external dependencies.
+//
+// Beats:
+//   1. Declare BwtBlock and CompressionStats structures.
+//   2. Define BzipHeader container and inspection records.
+//   3. Provide helper constructors and status formatting.
+
+pub type BwtBlock = struct {
+    primary_index: Int,
+    block_crc: Int,
+    orig_len: Int,
+    trans_len: Int,
+    payload: String
+};
+
+pub type CompressionStats = struct {
+    original_size: Int,
+    compressed_size: Int,
+    ratio_pct: Int,
+    block_count: Int,
+    crc32: Int,
+    valid: Bool
+};
+
+pub type BzipHeader = struct {
+    magic: String,
+    level: Int,
+    block_size_bytes: Int,
+    is_valid: Bool
+};
+
+pub fn make_bwt_block(idx: Int, crc: Int, orig_sz: Int, trans_sz: Int, data: String) -> BwtBlock {
+    return BwtBlock {
+        primary_index: idx,
+        block_crc: crc,
+        orig_len: orig_sz,
+        trans_len: trans_sz,
+        payload: data
+    };
+}
+
+pub fn make_stats(orig: Int, comp: Int, crc: Int, blocks: Int, ok: Bool) -> CompressionStats {
+    let mut pct: Int = 100;
+    if orig > 0 {
+        pct = (comp * 100) / orig;
+    }
+    return CompressionStats {
+        original_size: orig,
+        compressed_size: comp,
+        ratio_pct: pct,
+        block_count: blocks,
+        crc32: crc,
+        valid: ok
+    };
+}
+
+pub fn make_header(lvl: Int, valid: Bool) -> BzipHeader {
+    let blk: Int = lvl * 100000;
+    return BzipHeader {
+        magic: "BZh" + to_string(lvl),
+        level: lvl,
+        block_size_bytes: blk,
+        is_valid: valid
+    };
+}

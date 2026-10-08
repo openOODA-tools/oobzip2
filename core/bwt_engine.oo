@@ -1,0 +1,153 @@
+// # Burrows-Wheeler Transform Engine
+//
+// Logline: Block sorting rotation transformation and inverse reconstruction.
+//
+// Setup: Pure algorithmic transforms over string byte arrays and index vectors.
+//
+// Beats:
+//   1. Compare cyclic string rotations by offset.
+//   2. Forward BWT: lexicographically sort rotations to produce L and primary index.
+//   3. Inverse BWT: reconstruct original sequence via LF-mapping vector.
+
+import "core/bwt_types.oo";
+
+pub fn rot_cmp(s: String, len: Int, a: Int, b: Int) -> Int {
+    if a == b {
+        return 0;
+    }
+    let mut k: Int = 0;
+    while k < len {
+        let ca: Int = byte_at(s, (a + k) % len);
+        let cb: Int = byte_at(s, (b + k) % len);
+        if ca < cb {
+            return -1;
+        }
+        if ca > cb {
+            return 1;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+pub fn sort_rotations(s: String, len: Int, indices: List[Int]) -> List[Int] {
+    let mut arr: List[Int] = indices;
+    let mut i: Int = 1;
+    while i < len {
+        let key: Int = list_get(arr, i);
+        let mut j: Int = i - 1;
+        let mut done: Bool = false;
+        while j >= 0 && !done {
+            let prev: Int = list_get(arr, j);
+            if rot_cmp(s, len, prev, key) > 0 {
+                arr = list_set(arr, j + 1, prev);
+                j = j - 1;
+            } else {
+                done = true;
+            }
+        }
+        arr = list_set(arr, j + 1, key);
+        i = i + 1;
+    }
+    return arr;
+}
+
+pub fn bwt_forward(s: String) -> BwtBlock {
+    let len: Int = chars_len(s);
+    if len <= 0 {
+        return make_bwt_block(0, 0, 0, 0, "");
+    }
+    let mut indices: List[Int] = list_new();
+    let mut i: Int = 0;
+    while i < len {
+        indices = list_push(indices, i);
+        i = i + 1;
+    }
+
+    indices = sort_rotations(s, len, indices);
+
+    let mut primary_idx: Int = 0;
+    let mut l_buf: List[Int] = bytes_new();
+    let mut r: Int = 0;
+    while r < len {
+        let rot: Int = list_get(indices, r);
+        if rot == 0 {
+            primary_idx = r;
+        }
+        let last_char_idx: Int = (rot + len - 1) % len;
+        l_buf = bytes_push(l_buf, byte_at(s, last_char_idx));
+        r = r + 1;
+    }
+
+    let l_str: String = bytes_to_str(l_buf);
+    return make_bwt_block(primary_idx, 0, len, len, l_str);
+}
+
+pub fn bwt_inverse(l_str: String, primary_idx: Int) -> String {
+    let len: Int = chars_len(l_str);
+    if len <= 0 {
+        return "";
+    }
+    if primary_idx < 0 || primary_idx >= len {
+        return l_str;
+    }
+
+    let mut count: List[Int] = list_new();
+    let mut c: Int = 0;
+    while c < 256 {
+        count = list_push(count, 0);
+        c = c + 1;
+    }
+
+    let mut i: Int = 0;
+    while i < len {
+        let b: Int = byte_at(l_str, i);
+        let curr_cnt: Int = list_get(count, b);
+        count = list_set(count, b, curr_cnt + 1);
+        i = i + 1;
+    }
+
+    let mut base: List[Int] = list_new();
+    let mut sum: Int = 0;
+    c = 0;
+    while c < 256 {
+        base = list_push(base, sum);
+        sum = sum + list_get(count, c);
+        c = c + 1;
+    }
+
+    let mut occ: List[Int] = list_new();
+    c = 0;
+    while c < 256 {
+        occ = list_push(occ, 0);
+        c = c + 1;
+    }
+
+    let mut next_vec: List[Int] = list_new();
+    i = 0;
+    while i < len {
+        let b: Int = byte_at(l_str, i);
+        let pos: Int = list_get(base, b) + list_get(occ, b);
+        occ = list_set(occ, b, list_get(occ, b) + 1);
+        next_vec = list_push(next_vec, pos);
+        i = i + 1;
+    }
+
+    let mut res_buf: List[Int] = bytes_new();
+    i = 0;
+    while i < len {
+        res_buf = bytes_push(res_buf, 0);
+        i = i + 1;
+    }
+
+    let mut curr: Int = primary_idx;
+    let mut step: Int = len - 1;
+    while step >= 0 {
+        let ch: Int = byte_at(l_str, curr);
+        res_buf = list_set(res_buf, step, ch);
+        curr = list_get(next_vec, curr);
+        step = step - 1;
+    }
+
+    return bytes_to_str(res_buf);
+}

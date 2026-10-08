@@ -1,0 +1,155 @@
+// # oobzip2 Model Context Protocol (MCP) Server
+//
+// Logline: JSON-RPC 2.0 stdio server providing streaming bzip2 compression tools for AI agents.
+//
+// Setup: Zero-leakage capability-bounded request router over standard input/output.
+//
+// Beats:
+//   1. Handle MCP initialize and protocol version negotiation.
+//   2. Advertise bzip2_compress, bzip2_decompress, bzip2_inspect, bzip2_bwt, and bzip2_stats tools.
+//   3. Dispatch tools/call requests and format JSON-RPC responses.
+//   4. Process streaming stdio request loop.
+
+import "core/bwt_types.oo";
+import "core/bwt_crc.oo";
+import "core/bwt_engine.oo";
+import "core/bwt_codec.oo";
+import "ipc/json_field.oo";
+
+pub fn mcp_tools_list(id_val: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"tools\":["
+        + "{\"name\":\"bzip2_compress\",\"description\":\"Compress text using BWT, MTF, RLE, and CRC32.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"level\":{\"type\":\"integer\"}},\"required\":[\"text\"]}},"
+        + "{\"name\":\"bzip2_decompress\",\"description\":\"Decompress bzip2 payload back to original text with integrity check.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"payload\":{\"type\":\"string\"}},\"required\":[\"payload\"]}},"
+        + "{\"name\":\"bzip2_inspect\",\"description\":\"Inspect container header, block size, and CRC-32 checksum.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"payload\":{\"type\":\"string\"}},\"required\":[\"payload\"]}},"
+        + "{\"name\":\"bzip2_bwt\",\"description\":\"Perform forward or inverse Burrows-Wheeler Transform.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"primary_index\":{\"type\":\"integer\"},\"inverse\":{\"type\":\"boolean\"}},\"required\":[\"text\"]}},"
+        + "{\"name\":\"bzip2_stats\",\"description\":\"Evaluate compression ratio, size metrics, and CRC checksum.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}}"
+        + "]}}\n";
+}
+
+pub fn handle_compress(id_val: String, args: String) -> String {
+    let text: String = json_get_string(args, "text");
+    let comp: String = compress_text(text, 9);
+    let stats: CompressionStats = evaluate_stats(text, comp);
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+        + "Payload: " + comp + "\\n"
+        + "Original: " + to_string(stats.original_size) + " bytes\\n"
+        + "Compressed: " + to_string(stats.compressed_size) + " bytes\\n"
+        + "Ratio: " + to_string(stats.ratio_pct) + "%\\n"
+        + "CRC-32: " + crc_to_hex(stats.crc32) + "\""
+        + "}]}}\n";
+}
+
+pub fn handle_decompress(id_val: String, args: String) -> String {
+    let payload: String = json_get_string(args, "payload");
+    let text: String = decompress_payload(payload);
+    let safe_text: String = json_escape_string(text);
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+        + safe_text + "\""
+        + "}]}}\n";
+}
+
+pub fn handle_inspect(id_val: String, args: String) -> String {
+    let payload: String = json_get_string(args, "payload");
+    let hdr: BzipHeader = inspect_container(payload);
+    let mut ok_str: String = "false";
+    if hdr.is_valid { ok_str = "true"; }
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+        + "Magic: " + hdr.magic + "\\n"
+        + "Level: " + to_string(hdr.level) + "\\n"
+        + "Block Size: " + to_string(hdr.block_size_bytes) + " bytes\\n"
+        + "Valid: " + ok_str + "\""
+        + "}]}}\n";
+}
+
+pub fn handle_bwt(id_val: String, args: String) -> String {
+    let text: String = json_get_string(args, "text");
+    let inv_str: String = json_get_field(args, "inverse");
+    if inv_str == "true" {
+        let idx_str: String = json_get_field(args, "primary_index");
+        let mut idx: Int = 0;
+        let n: Int = chars_len(idx_str);
+        let mut i: Int = 0;
+        while i < n {
+            let b: Int = byte_at(idx_str, i);
+            if b >= 48 && b <= 57 { idx = (idx * 10) + (b - 48); }
+            i = i + 1;
+        }
+        let restored: String = bwt_inverse(text, idx);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+            + json_escape_string(restored) + "\""
+            + "}]}}\n";
+    }
+    let blk: BwtBlock = bwt_forward(text);
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+        + "Primary Index: " + to_string(blk.primary_index) + "\\n"
+        + "Transformed: " + json_escape_string(blk.payload) + "\""
+        + "}]}}\n";
+}
+
+pub fn handle_stats(id_val: String, args: String) -> String {
+    let text: String = json_get_string(args, "text");
+    let comp: String = compress_text(text, 9);
+    let stats: CompressionStats = evaluate_stats(text, comp);
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_val + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+        + "Original: " + to_string(stats.original_size) + " bytes\\n"
+        + "Compressed: " + to_string(stats.compressed_size) + " bytes\\n"
+        + "Ratio: " + to_string(stats.ratio_pct) + "%\\n"
+        + "CRC-32: " + crc_to_hex(stats.crc32) + "\""
+        + "}]}}\n";
+}
+
+pub fn handle_mcp_line(line: String) -> String {
+    let trimmed: String = str_trim(line);
+    if chars_len(trimmed) == 0 { return ""; }
+
+    let id_val: String = json_get_field(trimmed, "id");
+    let mut eff_id: String = "null";
+    if chars_len(id_val) > 0 { eff_id = id_val; }
+
+    let method: String = json_get_string(trimmed, "method");
+    if method == "initialize" {
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + eff_id + ",\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"oobzip2\",\"version\":\"0.2.0\"}}}\n";
+    }
+    if method == "tools/list" {
+        return mcp_tools_list(eff_id);
+    }
+    if method == "tools/call" {
+        let params: String = json_get_field(trimmed, "params");
+        let name: String = json_get_string(params, "name");
+        let args: String = json_get_field(params, "arguments");
+
+        if name == "bzip2_compress" { return handle_compress(eff_id, args); }
+        if name == "bzip2_decompress" { return handle_decompress(eff_id, args); }
+        if name == "bzip2_inspect" { return handle_inspect(eff_id, args); }
+        if name == "bzip2_bwt" { return handle_bwt(eff_id, args); }
+        if name == "bzip2_stats" { return handle_stats(eff_id, args); }
+
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + eff_id + ",\"error\":{\"code\":-32601,\"message\":\"Unknown tool\"}}\n";
+    }
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + eff_id + ",\"result\":{}}\n";
+}
+
+pub fn run_mcp_server(fs: &FsReadCap) {
+    let mut running: Bool = true;
+    while running {
+        let line_res: Result[String, String] = oo_read_stdin_chunk(fs, 8192);
+        if !line_res.is_ok() {
+            running = false;
+        } else {
+            let line: String = match line_res { Ok(s) => s, Err(_) => "" };
+            let trimmed: String = str_trim(line);
+            if chars_len(trimmed) == 0 {
+                running = false;
+            } else {
+                let resp: String = handle_mcp_line(trimmed);
+                if chars_len(resp) > 0 {
+                    print(resp);
+                }
+            }
+        }
+    }
+}

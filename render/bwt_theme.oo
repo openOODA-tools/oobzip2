@@ -1,0 +1,82 @@
+// # oobzip2 Terminal Theme and Formatting Engine
+//
+// Logline: Formats BWT compression metrics, container headers, and JSON structures.
+//
+// Setup: Bridges oote palette themes and structured terminal output for human consumption.
+//
+// Beats:
+//   1. Define ANSI color styling constants.
+//   2. Render human-readable terminal inspection and compression cards.
+//   3. Render structured JSON representations of compression statistics.
+//   4. Render structured JSON representations of BWT transformations.
+
+import "core/bwt_types.oo";
+import "core/bwt_crc.oo";
+
+pub fn render_ansi_header() -> String {
+    let bold: String = "\u001b[1m";
+    let cyan: String = "\u001b[38;5;51m";
+    let reset: String = "\u001b[0m";
+    return cyan + bold + "=== oobzip2: Sovereign BZIP2 COMPRESS ===" + reset + "\n";
+}
+
+pub fn render_terminal_stats(stats: CompressionStats, payload: String) -> String {
+    let bold: String = "\u001b[1m";
+    let green: String = "\u001b[38;5;82m";
+    let yellow: String = "\u001b[38;5;220m";
+    let dim: String = "\u001b[38;5;242m";
+    let reset: String = "\u001b[0m";
+
+    let mut out: String = render_ansi_header();
+    out = out + dim + "----------------------------------------" + reset + "\n";
+    out = out + bold + "Original Size:    " + reset + to_string(stats.original_size) + " bytes\n";
+    out = out + bold + "Compressed Size:  " + reset + to_string(stats.compressed_size) + " bytes\n";
+    out = out + bold + "Compression Ratio:" + reset + " " + to_string(stats.ratio_pct) + "%\n";
+    out = out + bold + "CRC-32 Checksum:  " + reset + yellow + crc_to_hex(stats.crc32) + reset + "\n";
+
+    if stats.valid {
+        out = out + bold + "Integrity Status: " + reset + green + "VALID (PASS)" + reset + "\n";
+    } else {
+        out = out + bold + "Integrity Status: " + reset + "\u001b[38;5;196mFAILED (CORRUPT)" + reset + "\n";
+    }
+
+    out = out + dim + "----------------------------------------" + reset + "\n";
+    out = out + dim + "Container Payload:" + reset + " " + payload + "\n";
+    return out;
+}
+
+pub fn render_json_stats(stats: CompressionStats, payload: String) -> String {
+    let mut v_str: String = "false";
+    if stats.valid {
+        v_str = "true";
+    }
+    return "{\"status\":\"ok\",\"tool\":\"oobzip2\","
+        + "\"original_size\":" + to_string(stats.original_size) + ","
+        + "\"compressed_size\":" + to_string(stats.compressed_size) + ","
+        + "\"ratio_pct\":" + to_string(stats.ratio_pct) + ","
+        + "\"crc32\":\"" + crc_to_hex(stats.crc32) + "\","
+        + "\"blocks\":" + to_string(stats.block_count) + ","
+        + "\"valid\":" + v_str + ","
+        + "\"payload\":\"" + payload + "\"}\n";
+}
+
+pub fn render_json_bwt(blk: BwtBlock) -> String {
+    return "{\"status\":\"ok\",\"tool\":\"oobzip2\","
+        + "\"primary_index\":" + to_string(blk.primary_index) + ","
+        + "\"orig_len\":" + to_string(blk.orig_len) + ","
+        + "\"trans_len\":" + to_string(blk.trans_len) + ","
+        + "\"payload\":\"" + blk.payload + "\"}\n";
+}
+
+pub fn render_json_inspect(hdr: BzipHeader, crc: Int) -> String {
+    let mut v_str: String = "false";
+    if hdr.is_valid {
+        v_str = "true";
+    }
+    return "{\"status\":\"ok\",\"tool\":\"oobzip2\","
+        + "\"magic\":\"" + hdr.magic + "\","
+        + "\"level\":" + to_string(hdr.level) + ","
+        + "\"block_size_bytes\":" + to_string(hdr.block_size_bytes) + ","
+        + "\"valid\":" + v_str + ","
+        + "\"crc32\":\"" + crc_to_hex(crc) + "\"}\n";
+}

@@ -1,0 +1,21 @@
+// # oobzip2 Core Module Anchor
+//
+// Logline: Integrates Burrows-Wheeler, MTF, RLE, and CRC32 compression subsystems.
+//
+// Setup: Bridges BWT transformation engines and container codec routines for consumers.
+//
+// Beats:
+//   1. Expose BWT block structures and container headers.
+//   2. Expose compression, decompression, and CRC validation routines.
+//   3. Provide core subsystem health verification predicate.
+
+import "core/bwt_types.oo";
+import "core/bwt_codec.oo";
+
+pub fn verify_core_subsystem() -> Bool {
+    let sample: String = "BANANA";
+    let comp: String = compress_text(sample, 9);
+    let orig: String = decompress_payload(comp);
+    let stats: CompressionStats = evaluate_stats(sample, comp);
+    return stats.valid && (orig == sample);
+}

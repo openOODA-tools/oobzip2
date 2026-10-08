@@ -1,0 +1,11 @@
+Package: oobzip2
+Version: 0.2.0-1
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: openOODA-tools <ops@openooda.org>
+Depends: libc6
+Description: Sovereign BZIP2 COMPRESS
+ Burrows-Wheeler block sorting text compression engine with integrity checks.
+ Pure openOODA implementation with zero ambient authority, dual POSIX CLI,
+ and Model Context Protocol (MCP) streaming server.

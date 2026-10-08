@@ -1,0 +1,20 @@
+// # oobzip2 Render Module Anchor
+//
+// Logline: Anchors visualization, ANSI cards, and JSON rendering primitives.
+//
+// Setup: Demands pure openOODA string formatting functions.
+//
+// Beats:
+//   1. Expose terminal color cards and formatting functions.
+//   2. Expose structured JSON encoders for BWT and compression stats.
+//   3. Provide render subsystem health verification predicate.
+
+import "core/bwt_types.oo";
+import "render/bwt_theme.oo";
+
+pub fn verify_render_subsystem() -> Bool {
+    let stats: CompressionStats = make_stats(100, 45, 12345678, 1, true);
+    let card: String = render_terminal_stats(stats, "BZh9:test");
+    let json: String = render_json_stats(stats, "BZh9:test");
+    return chars_len(card) > 0 && chars_len(json) > 0;
+}

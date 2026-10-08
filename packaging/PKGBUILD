@@ -1,7 +1,7 @@
 # Maintainer: openOODA-tools <ops@openooda.org>
 pkgname=oobzip2-bin
 _pkgname=oobzip2
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Burrows-Wheeler block sorting text compression engine with integrity checks."
 arch=('x86_64')

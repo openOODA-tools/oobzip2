@@ -6,47 +6,122 @@
 //
 // Beats:
 //   1. Parse command-line options and dispatch --help, --version, or --mcp.
-//   2. Execute capability-bounded oobzip2 operations.
-//   3. Format and output structured results to standard output.
+//   2. Ingest payload from inline argument or standard input.
+//   3. Execute BWT compression, decompression, inspection, or integrity testing.
+//   4. Format and output structured results to standard output.
+
+import "core/bwt_types.oo";
+import "core/bwt_codec.oo";
+import "core/bwt_engine.oo";
+import "render/bwt_theme.oo";
+import "ipc/bzip_opts.oo";
+import "ipc/mcp_serve.oo";
 
 fn render_help() -> String {
-    return "oobzip2 0.1.0 (openOODA sovereign files & navigation)\n"
-        + "usage: oobzip2 [options] [ARGUMENTS]...\n\n"
+    return "oobzip2 0.2.0 (openOODA sovereign bzip compress)\n"
+        + "usage: oobzip2 [options] [INPUT]\n\n"
         + "Burrows-Wheeler block sorting text compression engine with integrity checks.\n\n"
         + "Options:\n"
+        + "  -c, --compress       compress input text [default]\n"
+        + "  -d, --decompress     decompress bzip2 payload\n"
+        + "  -t, --test           test payload and verify CRC-32 integrity\n"
+        + "  -i, --inspect        inspect container header and block size\n"
+        + "      --bwt            execute raw Burrows-Wheeler Transform\n"
+        + "  -1 .. -9             compression block level (100k to 900k) [default: -9]\n"
+        + "  -s, --string <TEXT>  explicit input text string\n"
+        + "      --json           output formatted as structured JSON\n"
+        + "      --mcp            run as Model Context Protocol stdio server\n"
         + "  -h, --help           display this help and exit\n"
-        + "  -v, --version        output version information and exit\n"
-        + "      --json           output formatted as JSON Lines\n"
-        + "      --color <WHEN>   colorize output: auto, always, never [default: auto]\n"
-        + "      --theme <NAME>   override active oote palette\n"
-        + "      --mcp            run as Model Context Protocol stdio server\n";
+        + "  -v, --version        output version information and exit\n";
 }
 
-fn render_version() -> String {
-    return "oobzip2 0.1.0 (openOODA sovereign files & navigation)\n";
-}
+pub fn main(
+    fs: &FsReadCap,
+    proc_cap: &ProcessCap,
+    env: &EnvCap,
+    args: List[String]
+) -> Result[Int, String] {
+    let opt: BzipOpts = parse_opts(args);
 
-fn main(args: List[String]) -> Int {
-    let num_args: Int = list_len(args);
-    let mut i: Int = 0;
-
-    while i < num_args {
-        let arg: String = list_get(args, i);
-        if arg == "-h" || arg == "--help" {
-            print(render_help());
-            return 0;
-        }
-        if arg == "-v" || arg == "--version" {
-            print(render_version());
-            return 0;
-        }
-        if arg == "--mcp" {
-            print("{\"jsonrpc\":\"2.0\",\"result\":{\"status\":\"ready\",\"tool\":\"oobzip2\"}}\n");
-            return 0;
-        }
-        i = i + 1;
+    if opt.help_mode {
+        print(render_help());
+        return Ok(0);
+    }
+    if opt.version_mode {
+        print("oobzip2 0.2.0 (openOODA sovereign bzip compress)\n");
+        return Ok(0);
+    }
+    if opt.mcp_mode {
+        run_mcp_server(fs);
+        return Ok(0);
     }
 
-    print("oobzip2: sovereign capability-bounded utility ready\n");
-    return 0;
+    let mut input: String = opt.input_text;
+    if chars_len(input) == 0 {
+        let stdin_res: Result[String, String] = oo_read_stdin_chunk(fs, 65536);
+        if stdin_res.is_ok() {
+            let chunk: String = match stdin_res { Ok(s) => s, Err(_) => "" };
+            let trimmed: String = str_trim(chunk);
+            if chars_len(trimmed) > 0 {
+                input = trimmed;
+            }
+        }
+    }
+
+    if chars_len(input) == 0 {
+        input = "openOODA Sovereign BZIP2 Text Compression Subsystem";
+    }
+
+    if opt.action == "decompress" {
+        let orig: String = decompress_payload(input);
+        if opt.json_mode {
+            print("{\"status\":\"ok\",\"tool\":\"oobzip2\",\"decompressed\":\"" + orig + "\"}\n");
+        } else {
+            print(orig + "\n");
+        }
+        return Ok(0);
+    }
+
+    if opt.action == "inspect" {
+        let hdr: BzipHeader = inspect_container(input);
+        if opt.json_mode {
+            print(render_json_inspect(hdr, 0));
+        } else {
+            let mut v: String = "INVALID";
+            if hdr.is_valid { v = "VALID"; }
+            print("Magic: " + hdr.magic + " Level: " + to_string(hdr.level) + " Status: " + v + "\n");
+        }
+        return Ok(0);
+    }
+
+    if opt.action == "bwt" {
+        let blk: BwtBlock = bwt_forward(input);
+        if opt.json_mode {
+            print(render_json_bwt(blk));
+        } else {
+            print("Primary Index: " + to_string(blk.primary_index) + " Transformed: " + blk.payload + "\n");
+        }
+        return Ok(0);
+    }
+
+    let comp: String = compress_text(input, opt.level);
+    let stats: CompressionStats = evaluate_stats(input, comp);
+
+    if opt.action == "test" {
+        if stats.valid {
+            print("PASS: integrity verified\n");
+            return Ok(0);
+        } else {
+            print("FAIL: corrupted stream\n");
+            return Ok(1);
+        }
+    }
+
+    if opt.json_mode {
+        print(render_json_stats(stats, comp));
+    } else {
+        print(render_terminal_stats(stats, comp));
+    }
+
+    return Ok(0);
 }
